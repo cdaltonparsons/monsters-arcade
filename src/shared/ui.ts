@@ -2,10 +2,11 @@ import Phaser from 'phaser';
 import { sfx } from './sfx';
 
 /** Round button in the top corner that goes back to the game picker. */
-export function addHomeButton(scene: Phaser.Scene): Phaser.GameObjects.Image {
+export function addHomeButton(scene: Phaser.Scene, beforeLeaving?: () => Promise<void>): Phaser.GameObjects.Image {
   const button = scene.add.image(100, 100, 'icon-home').setDisplaySize(130, 130).setInteractive();
-  button.on('pointerup', () => {
+  button.on('pointerup', async () => {
     sfx.tap();
+    await beforeLeaving?.();
     scene.scene.start('menu');
   });
   return button;

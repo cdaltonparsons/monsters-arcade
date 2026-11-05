@@ -35,6 +35,8 @@ src/
     quest/
       world.ts    Decides where everything goes in the world
       QuestScene.ts    The babies, the stars and the game loop
+    maker/
+      MakerScene.ts    Build your own monster, from the parts in shared/avatar.ts
     farm/
       farm.ts     The rules: carrying, machines, money and upgrades
       FarmScene.ts     The fields, machines, stand and customers

@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import { farm } from './games/farm';
+import { maker } from './games/maker';
 import { match3 } from './games/match3';
 import { quest } from './games/quest';
 
@@ -14,4 +15,4 @@ export interface GameEntry {
 }
 
 /** To add a game: make a folder in src/games, then add it to this list. */
-export const games: GameEntry[] = [match3, quest, farm];
+export const games: GameEntry[] = [maker, quest, farm, match3];

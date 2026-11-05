@@ -41,7 +41,7 @@ export class MenuScene extends Phaser.Scene {
 
     const picture = this.add.image(0, -50, icon).setDisplaySize(320, 320);
     const label = this.add
-      .text(0, 180, title, { fontFamily: FONT, fontSize: '56px', color: INK })
+      .text(0, 180, title, { fontFamily: FONT, fontSize: '52px', color: INK })
       .setOrigin(0.5);
 
     // A container moves and scales its children together, like a wrapper div.
