@@ -1,3 +1,5 @@
+import { HERO_RADIUS } from '../../shared/hero-size';
+
 /**
  * Decides where everything goes in the world, with no graphics. A new world is
  * made every round, and world.test.ts checks a few thousand of them can be played.
@@ -26,7 +28,6 @@ export interface World {
 
 export const WORLD_WIDTH = 2400;
 export const WORLD_HEIGHT = 3400;
-export const HERO_RADIUS = 55;
 
 /**
  * Space kept clear around everything solid. Every gap is wider than the hero,

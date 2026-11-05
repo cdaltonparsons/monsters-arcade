@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { generateWorld, HERO_RADIUS, WORLD_HEIGHT, WORLD_WIDTH, type Point, type World } from './world';
+import { HERO_RADIUS } from '../../shared/hero-size';
+import { generateWorld, WORLD_HEIGHT, WORLD_WIDTH, type Point, type World } from './world';
 
 /** Small seeded random numbers, so a failing world can be reproduced. */
 function seeded(seed: number): () => number {

@@ -13,3 +13,6 @@ export const GAME_HEIGHT = Math.round(
 export const BACKGROUND = '#fff4d6';
 export const INK = '#4a3470';
 export const FONT = '"Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif';
+
+/** Screen-fixed things draw above the world, whose depth is its y position. */
+export const HUD_DEPTH = 100000;

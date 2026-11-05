@@ -1,17 +1,17 @@
 import Phaser from 'phaser';
 import { MONSTERS } from '../../shared/assets';
-import { FONT, GAME_HEIGHT, GAME_WIDTH } from '../../shared/constants';
+import { FONT, HUD_DEPTH } from '../../shared/constants';
+import { GoalArrow } from '../../shared/GoalArrow';
+import { drawGrass } from '../../shared/ground';
+import { Hero } from '../../shared/Hero';
+import { Joystick } from '../../shared/Joystick';
 import { sfx } from '../../shared/sfx';
 import { addHomeButton, burstStars } from '../../shared/ui';
-import flowerArt from './art/flower.svg?url';
-import arrowArt from './art/arrow.svg?url';
 import houseArt from './art/house.svg?url';
 import pondArt from './art/pond.svg?url';
 import rockArt from './art/rock.svg?url';
-import treeArt from './art/tree.svg?url';
 import {
   generateWorld,
-  HERO_RADIUS,
   WORLD_HEIGHT,
   WORLD_WIDTH,
   type Obstacle,
@@ -21,8 +21,6 @@ import {
 } from './world';
 
 // Tweak these to change how the game feels.
-const HERO_SPEED = 560; // Pixels per second.
-const JOYSTICK_REACH = 130; // How far to drag for full speed.
 const FIRST_ROUND_BABIES = 3;
 const MOST_BABIES = 8;
 const STAR_COUNT = 25;
@@ -31,15 +29,12 @@ const HOME_REACH = 330;
 const TRAIL_STEP = 12; // Remember the hero's position every this many pixels...
 const TRAIL_GAP = 11; // ...and leave this many remembered positions between followers.
 
-/** Things drawn above the world have to beat every y position, so start high. */
-const HUD_DEPTH = 100000;
-
 /**
  * Where the picture sits relative to its solid circle. `originY` lines the
  * circle up with the bottom of the art, so you can walk behind the treetops.
  */
 const ART: Record<ObstacleKind, { key: string; size: [number, number]; originY: number }> = {
-  tree: { key: 'quest-tree', size: [280, 400], originY: 0.9 },
+  tree: { key: 'scenery-tree', size: [280, 400], originY: 0.9 },
   rock: { key: 'quest-rock', size: [260, 200], originY: 0.7 },
   pond: { key: 'quest-pond', size: [440, 440], originY: 0.5 },
   house: { key: 'quest-house', size: [440, 440], originY: 0.75 },
@@ -60,10 +55,10 @@ export class QuestScene extends Phaser.Scene {
 
   private world!: World;
   private round!: number;
+  private walker!: Hero;
   private hero!: Phaser.Physics.Arcade.Sprite;
-  private shadow!: Phaser.GameObjects.Ellipse;
-  private arrow!: Phaser.GameObjects.Image;
-  private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
+  private arrow!: GoalArrow;
+  private joystick!: Joystick;
 
   private lostBabies!: Baby[];
   private followers!: Baby[];
@@ -75,10 +70,6 @@ export class QuestScene extends Phaser.Scene {
   private starCount!: number;
   private starLabel!: Phaser.GameObjects.Text;
 
-  private joystickBase!: Phaser.GameObjects.Arc;
-  private joystickKnob!: Phaser.GameObjects.Arc;
-  /** The way the player is pushing: x and y from -1 to 1. */
-  private push!: Phaser.Math.Vector2;
   private lastThudAt!: number;
 
   constructor() {
@@ -87,12 +78,9 @@ export class QuestScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.svg('quest-tree', treeArt, { width: 280, height: 400 });
     this.load.svg('quest-rock', rockArt, { width: 260, height: 200 });
     this.load.svg('quest-pond', pondArt, { width: 440, height: 440 });
     this.load.svg('quest-house', houseArt, { width: 440, height: 440 });
-    this.load.svg('quest-flower', flowerArt, { width: 60, height: 60 });
-    this.load.svg('quest-arrow', arrowArt, { width: 110, height: 110 });
   }
 
   create(data: { round?: number }): void {
@@ -101,18 +89,20 @@ export class QuestScene extends Phaser.Scene {
     this.homeCount = 0;
     this.starCount = 0;
     this.lastThudAt = 0;
-    this.push = new Phaser.Math.Vector2();
 
     const babyCount = Math.min(FIRST_ROUND_BABIES + this.round - 1, MOST_BABIES);
     this.world = generateWorld(babyCount, STAR_COUNT);
 
-    this.drawGround();
+    drawGrass(this, WORLD_WIDTH, WORLD_HEIGHT);
     const blockers = this.addObstacles();
-    this.addHero();
+    this.walker = new Hero(this, this.world.start.x, this.world.start.y);
+    this.hero = this.walker.sprite;
     this.addPickups();
-    this.addCamera();
+    // The small numbers make the camera glide along a little behind the hero.
+    this.cameras.main.startFollow(this.hero, true, 0.12, 0.12);
     this.addHud(babyCount);
-    this.addJoystick();
+    this.joystick = new Joystick(this);
+    this.arrow = new GoalArrow(this);
 
     // When the hero bumps into something solid, call onBump.
     this.physics.add.collider(this.hero, blockers, (_hero, blocker) => {
@@ -121,22 +111,6 @@ export class QuestScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------- Building the world
-
-  private drawGround(): void {
-    this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    this.add.rectangle(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 0x8fd46f).setDepth(-3);
-
-    for (let i = 0; i < 60; i++) {
-      const x = Phaser.Math.Between(0, WORLD_WIDTH);
-      const y = Phaser.Math.Between(0, WORLD_HEIGHT);
-      this.add.ellipse(x, y, Phaser.Math.Between(160, 420), Phaser.Math.Between(90, 200), 0x83cb64).setDepth(-2);
-    }
-    for (let i = 0; i < 130; i++) {
-      const x = Phaser.Math.Between(0, WORLD_WIDTH);
-      const y = Phaser.Math.Between(0, WORLD_HEIGHT);
-      this.add.image(x, y, 'quest-flower').setScale(Phaser.Math.FloatBetween(0.5, 1)).setDepth(-1);
-    }
-  }
 
   /**
    * Each obstacle has two parts: the picture you see, and an invisible circle
@@ -161,24 +135,6 @@ export class QuestScene extends Phaser.Scene {
     // Things lower on screen draw on top, so the world looks like it has depth.
     // A pond is flat, so it always draws underneath everything else.
     return art.setDepth(obstacle.kind === 'pond' ? -0.5 : obstacle.y);
-  }
-
-  private addHero(): void {
-    const { start } = this.world;
-    if (!this.anims.exists('hero-walk')) {
-      // Flip between two pictures, like a two-page flipbook.
-      this.anims.create({
-        key: 'hero-walk',
-        frames: [{ key: 'hero-1' }, { key: 'hero-2' }],
-        frameRate: 9,
-        repeat: -1,
-      });
-    }
-    this.shadow = this.add.ellipse(start.x, start.y, 130, 44, 0x000000, 0.16);
-    this.hero = this.physics.add.sprite(start.x, start.y, 'hero-1');
-    this.hero.setCollideWorldBounds(true);
-    // The hitbox is around the feet, not the whole picture.
-    this.hero.setCircle(HERO_RADIUS, 90 - HERO_RADIUS, 180 - HERO_RADIUS * 2);
   }
 
   private addPickups(): void {
@@ -212,16 +168,6 @@ export class QuestScene extends Phaser.Scene {
       return star;
     });
     this.trail = [{ x: this.hero.x, y: this.hero.y }];
-
-    this.arrow = this.add.image(this.hero.x, this.hero.y, 'quest-arrow').setDepth(HUD_DEPTH - 1);
-    this.tweens.add({ targets: this.arrow, scale: 1.2, duration: 380, yoyo: true, repeat: -1 });
-  }
-
-  private addCamera(): void {
-    // The world is bigger than the screen, so the camera follows the hero around.
-    // The small numbers make it glide along a little behind, instead of being rigid.
-    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    this.cameras.main.startFollow(this.hero, true, 0.12, 0.12);
   }
 
   /** setScrollFactor(0) pins something to the screen instead of the world. */
@@ -248,57 +194,6 @@ export class QuestScene extends Phaser.Scene {
       .setDepth(HUD_DEPTH);
   }
 
-  // ---------------------------------------------------------------- Controls
-
-  /**
-   * A joystick that appears wherever a finger lands, so small hands can't miss it.
-   * It rests faintly at the bottom of the screen to show that it's there.
-   */
-  private addJoystick(): void {
-    this.joystickBase = this.add.circle(0, 0, JOYSTICK_REACH + 40, 0xffffff, 0.3).setScrollFactor(0).setDepth(HUD_DEPTH);
-    this.joystickKnob = this.add.circle(0, 0, 80, 0xffffff, 0.85).setScrollFactor(0).setDepth(HUD_DEPTH);
-    this.restJoystick();
-
-    this.cursors = this.input.keyboard?.createCursorKeys(); // Arrow keys, for testing on a computer.
-
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
-      if (over.length > 0) return; // That tap was on the home button.
-      this.joystickBase.setPosition(pointer.x, pointer.y).setAlpha(1);
-      this.joystickKnob.setPosition(pointer.x, pointer.y).setAlpha(1);
-    });
-    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.isDown) this.moveJoystick(pointer);
-    });
-    this.input.on('pointerup', () => this.restJoystick());
-    this.input.on('pointerupoutside', () => this.restJoystick());
-  }
-
-  private moveJoystick(pointer: Phaser.Input.Pointer): void {
-    const drag = new Phaser.Math.Vector2(pointer.x - this.joystickBase.x, pointer.y - this.joystickBase.y);
-    const strength = Math.min(drag.length() / JOYSTICK_REACH, 1);
-    this.push = drag.normalize().scale(strength);
-    this.joystickKnob.setPosition(
-      this.joystickBase.x + this.push.x * JOYSTICK_REACH,
-      this.joystickBase.y + this.push.y * JOYSTICK_REACH,
-    );
-  }
-
-  private restJoystick(): void {
-    this.push = new Phaser.Math.Vector2();
-    const x = GAME_WIDTH / 2;
-    const y = GAME_HEIGHT - 260;
-    this.joystickBase.setPosition(x, y).setAlpha(0.5);
-    this.joystickKnob.setPosition(x, y).setAlpha(0.5);
-  }
-
-  private readControls(): Phaser.Math.Vector2 {
-    const keys = this.cursors;
-    if (!keys) return this.push;
-    const x = Number(keys.right.isDown) - Number(keys.left.isDown);
-    const y = Number(keys.down.isDown) - Number(keys.up.isDown);
-    return x === 0 && y === 0 ? this.push : new Phaser.Math.Vector2(x, y).normalize();
-  }
-
   // ---------------------------------------------------------------- The game loop
 
   /** Runs about 60 times a second. `delta` is the milliseconds since the last run. */
@@ -308,26 +203,11 @@ export class QuestScene extends Phaser.Scene {
     this.collectStars();
     this.findBabies();
     this.checkHome();
-    this.pointArrow();
+    this.arrow.point(this.hero, this.nextGoal());
   }
 
   private moveHero(): void {
-    const push = this.readControls();
-    // We only ever set a speed. Physics moves the hero and handles the bumping.
-    this.hero.setVelocity(push.x * HERO_SPEED, push.y * HERO_SPEED);
-
-    if (push.lengthSq() > 0.01) {
-      this.hero.play('hero-walk', true);
-      if (Math.abs(push.x) > 0.1) this.hero.setFlipX(push.x < 0);
-      this.hero.setAngle(Math.sin(this.time.now / 70) * 6); // A happy waddle.
-    } else {
-      this.hero.stop();
-      this.hero.setTexture('hero-1').setAngle(0);
-    }
-
-    const feetY = this.hero.y + 64;
-    this.hero.setDepth(feetY);
-    this.shadow.setPosition(this.hero.x, feetY + 20).setDepth(feetY - 1);
+    this.walker.walk(this.joystick.read());
 
     // Leave a trail of breadcrumbs for the followers.
     const last = this.trail[this.trail.length - 1];
@@ -423,18 +303,7 @@ export class QuestScene extends Phaser.Scene {
     this.time.delayedCall(2800, () => this.scene.restart({ round: this.round + 1 }));
   }
 
-  /** Stops anyone getting lost: the arrow always points at what to do next. */
-  private pointArrow(): void {
-    const target = this.nextGoal();
-    const near = !target || this.isNearHero(target, 340);
-    this.arrow.setVisible(!near);
-    if (near) return;
-
-    const angle = Phaser.Math.Angle.Between(this.hero.x, this.hero.y, target.x, target.y);
-    this.arrow.setRotation(angle);
-    this.arrow.setPosition(this.hero.x + Math.cos(angle) * 170, this.hero.y + Math.sin(angle) * 170);
-  }
-
+  /** What the arrow points at: the closest lost baby, then home. */
   private nextGoal(): Point | null {
     if (this.lostBabies.length === 0) return this.followers.length > 0 ? this.world.start : null;
     const closest = [...this.lostBabies].sort(

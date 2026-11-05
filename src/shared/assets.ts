@@ -8,6 +8,10 @@ import hero1 from './monsters/hero-1.svg?url';
 import hero2 from './monsters/hero-2.svg?url';
 import home from './icons/home.svg?url';
 import star from './icons/star.svg?url';
+import barn from './icons/barn.svg?url';
+import tree from './scenery/tree.svg?url';
+import flower from './scenery/flower.svg?url';
+import arrow from './scenery/arrow.svg?url';
 
 /** Texture keys, used anywhere a game wants to draw a monster. */
 export const MONSTERS = ['monster-red', 'monster-blue', 'monster-green', 'monster-yellow', 'monster-purple'];
@@ -24,4 +28,8 @@ export function loadSharedAssets(scene: Phaser.Scene): void {
   scene.load.svg('hero-2', hero2, { width: 180, height: 180 });
   scene.load.svg('icon-home', home, { width: 200, height: 200 });
   scene.load.svg('icon-star', star, { width: 100, height: 100 });
+  scene.load.svg('icon-barn', barn, { width: 320, height: 320 });
+  scene.load.svg('scenery-tree', tree, { width: 280, height: 400 });
+  scene.load.svg('scenery-flower', flower, { width: 60, height: 60 });
+  scene.load.svg('scenery-arrow', arrow, { width: 110, height: 110 });
 }
