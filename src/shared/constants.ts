@@ -1,10 +1,13 @@
 /**
- * The game draws on a fixed 1080x1920 "stage". Phaser scales that stage to fit
- * whatever screen it is on, so game code never has to think about phone sizes
- * (the opposite of responsive CSS).
+ * The game draws on a "stage" that is always 1080 wide. Phaser scales the stage
+ * to fit the screen, so game code never has to think about phone sizes (the
+ * opposite of responsive CSS). The height follows the phone's shape when the app
+ * opens, so tall phones don't get empty bars at the top and bottom.
  */
 export const GAME_WIDTH = 1080;
-export const GAME_HEIGHT = 1920;
+export const GAME_HEIGHT = Math.round(
+  GAME_WIDTH * Math.min(Math.max(window.innerHeight / window.innerWidth, 16 / 9), 21 / 9),
+);
 
 /** Matches the page background in index.html. */
 export const BACKGROUND = '#fff4d6';

@@ -30,5 +30,12 @@ export const sfx = {
     beep(base, 0, 0.16, 0.22, base * 2);
   },
   boing: () => beep(300, 0, 0.18, 0.12, 170),
+  /** A baby monster joins the line. */
+  chirp: () => {
+    beep(700, 0, 0.1, 0.18, 1100);
+    beep(900, 0.11, 0.14, 0.18, 1500);
+  },
+  star: () => beep(990, 0, 0.12, 0.14, 1400),
+  thud: () => beep(170, 0, 0.1, 0.14, 110),
   party: () => [523, 659, 784, 1047].forEach((note, i) => beep(note, i * 0.11, 0.25)),
 };

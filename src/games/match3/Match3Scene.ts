@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { MONSTERS } from '../../shared/assets';
-import { BACKGROUND, GAME_WIDTH } from '../../shared/constants';
+import { BACKGROUND, GAME_HEIGHT, GAME_WIDTH } from '../../shared/constants';
 import { sfx } from '../../shared/sfx';
 import { addHomeButton, burstStars } from '../../shared/ui';
 import {
@@ -19,7 +19,7 @@ const ROWS = 6;
 const COLS = 5;
 const KINDS = 4; // Fewer kinds means more matches and more chain reactions.
 const TILE = 200;
-const BOARD_TOP = 300;
+const BOARD_TOP = Math.max(300, (GAME_HEIGHT - ROWS * TILE) / 2); // Centred on tall phones.
 const BOARD_LEFT = (GAME_WIDTH - COLS * TILE) / 2;
 const MONSTER_SIZE = 180;
 const HINT_AFTER_MS = 4000; // How long a child can sit idle before a pair wiggles.

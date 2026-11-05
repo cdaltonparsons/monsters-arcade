@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import { match3 } from './games/match3';
+import { quest } from './games/quest';
 
 /** Everything the arcade needs to know about a game. */
 export interface GameEntry {
@@ -12,4 +13,4 @@ export interface GameEntry {
 }
 
 /** To add a game: make a folder in src/games, then add it to this list. */
-export const games: GameEntry[] = [match3];
+export const games: GameEntry[] = [match3, quest];

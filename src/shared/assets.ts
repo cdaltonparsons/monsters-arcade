@@ -4,6 +4,8 @@ import blue from './monsters/blue.svg?url';
 import green from './monsters/green.svg?url';
 import yellow from './monsters/yellow.svg?url';
 import purple from './monsters/purple.svg?url';
+import hero1 from './monsters/hero-1.svg?url';
+import hero2 from './monsters/hero-2.svg?url';
 import home from './icons/home.svg?url';
 import star from './icons/star.svg?url';
 
@@ -18,6 +20,8 @@ export function loadSharedAssets(scene: Phaser.Scene): void {
   scene.load.svg('monster-green', green, monsterSize);
   scene.load.svg('monster-yellow', yellow, monsterSize);
   scene.load.svg('monster-purple', purple, monsterSize);
+  scene.load.svg('hero-1', hero1, { width: 180, height: 180 });
+  scene.load.svg('hero-2', hero2, { width: 180, height: 180 });
   scene.load.svg('icon-home', home, { width: 200, height: 200 });
   scene.load.svg('icon-star', star, { width: 100, height: 100 });
 }

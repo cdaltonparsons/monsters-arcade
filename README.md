@@ -32,6 +32,9 @@ src/
     match3/
       board.ts    The rules, as plain functions over a grid of numbers
       Match3Scene.ts   Drawing, input and animation
+    quest/
+      world.ts    Decides where everything goes in the world
+      QuestScene.ts    The hero, joystick, camera and game loop
 ```
 
 To add a game, make a folder in `src/games/` with a scene in it, then add it to
@@ -48,8 +51,13 @@ To add a game, make a folder in `src/games/` with a scene in it, then add it to
 | z-index | `setDepth()` |
 | Wrapper `div` | Container |
 
-The habit worth keeping is separating rules from drawing. `board.ts` knows nothing
-about Phaser, so it can be unit tested like any service.
+Monster Match waits for taps, a lot like a web app. Monster Quest shows the other
+style, the game loop: Phaser calls `update()` about 60 times a second, and each call
+reads the controls, sets the hero's speed, and checks what the hero has reached.
+Physics does the moving and the bumping. On a computer, the arrow keys also work.
+
+The habit worth keeping is separating rules from drawing. `board.ts` and `world.ts`
+know nothing about Phaser, so they can be unit tested like any service.
 
 ## House rules for toddler games
 
