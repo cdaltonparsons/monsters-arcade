@@ -40,6 +40,11 @@ export const sfx = {
     beep(1320, 0, 0.07, 0.14);
     beep(1760, 0.07, 0.14, 0.14);
   },
+  /** Something moving in the leaves. Quiet, so it's a clue and not an alarm. */
+  rustle: () => {
+    beep(240, 0, 0.07, 0.07, 170);
+    beep(280, 0.08, 0.07, 0.07, 200);
+  },
   thud: () => beep(170, 0, 0.1, 0.14, 110),
   party: () => [523, 659, 784, 1047].forEach((note, i) => beep(note, i * 0.11, 0.25)),
 };

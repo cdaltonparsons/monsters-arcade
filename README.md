@@ -40,6 +40,11 @@ src/
     farm/
       farm.ts     The rules: carrying, machines, money and upgrades
       FarmScene.ts     The fields, machines, stand and customers
+    hideseek/
+      rules.ts    The rules: hiding spots, hints and where the seeker looks
+      HideSeekScene.ts  The field and the "who's hiding?" cards
+      SeekMode.ts      You find the friends
+      HideMode.ts      You hide, and a monster comes looking
 ```
 
 To add a game, make a folder in `src/games/` with a scene in it, then add it to
@@ -61,8 +66,9 @@ style, the game loop: Phaser calls `update()` about 60 times a second, and each 
 reads the controls, sets the hero's speed, and checks what the hero has reached.
 Physics does the moving and the bumping. On a computer, the arrow keys also work.
 
-The habit worth keeping is separating rules from drawing. `board.ts`, `world.ts` and
-`farm.ts` know nothing about Phaser, so they can be unit tested like any service.
+The habit worth keeping is separating rules from drawing. `board.ts`, `world.ts`,
+`farm.ts` and `rules.ts` know nothing about Phaser, so they can be unit tested like
+any service.
 
 ## House rules for toddler games
 

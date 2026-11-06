@@ -8,6 +8,7 @@ import home from './icons/home.svg?url';
 import star from './icons/star.svg?url';
 import barn from './icons/barn.svg?url';
 import maker from './icons/maker.svg?url';
+import hide from './icons/hide.svg?url';
 import tree from './scenery/tree.svg?url';
 import flower from './scenery/flower.svg?url';
 import arrow from './scenery/arrow.svg?url';
@@ -27,6 +28,7 @@ export function loadSharedAssets(scene: Phaser.Scene): void {
   scene.load.svg('icon-star', star, { width: 100, height: 100 });
   scene.load.svg('icon-barn', barn, { width: 320, height: 320 });
   scene.load.svg('icon-maker', maker, { width: 320, height: 320 });
+  scene.load.svg('icon-hide', hide, { width: 440, height: 440 });
   scene.load.svg('scenery-tree', tree, { width: 280, height: 400 });
   scene.load.svg('scenery-flower', flower, { width: 60, height: 60 });
   scene.load.svg('scenery-arrow', arrow, { width: 110, height: 110 });
