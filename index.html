@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- user-scalable=no stops a toddler's pinch from zooming the whole page. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Monsters Arcade</title>
+    <style>
+      html,
+      body,
+      #game {
+        margin: 0;
+        height: 100%;
+        /* Same colour as the game, so bars around the canvas are invisible. */
+        background: #fff4d6;
+        overflow: hidden;
+        /* Stops pull-to-refresh and long-press menus getting in the way. */
+        overscroll-behavior: none;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
