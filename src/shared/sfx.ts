@@ -46,5 +46,12 @@ export const sfx = {
     beep(280, 0.08, 0.07, 0.07, 200);
   },
   thud: () => beep(170, 0, 0.1, 0.14, 110),
+  /** A little jump, rising then landing. */
+  hop: () => beep(380, 0, 0.12, 0.1, 640),
+  /** Two falling notes, for "watch out!" moments. Gentle, never scary. */
+  uhOh: () => {
+    beep(660, 0, 0.16, 0.16, 620);
+    beep(500, 0.18, 0.24, 0.16, 440);
+  },
   party: () => [523, 659, 784, 1047].forEach((note, i) => beep(note, i * 0.11, 0.25)),
 };
