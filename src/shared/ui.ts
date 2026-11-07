@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { HUD_DEPTH } from './constants';
 import { sfx } from './sfx';
 
 /** Round button in the top corner that goes back to the game picker. */
@@ -22,7 +23,7 @@ export function burstStars(scene: Phaser.Scene, x: number, y: number, count = 8)
     lifespan: 650,
     emitting: false,
   });
-  emitter.setDepth(20); // Above everything else in the game.
+  emitter.setDepth(HUD_DEPTH - 2); // Above the world, whose depth is its y position.
   emitter.explode(count);
   scene.time.delayedCall(800, () => emitter.destroy());
 }
