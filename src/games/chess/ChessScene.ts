@@ -71,6 +71,8 @@ export class ChessScene extends Phaser.Scene {
   private infoText!: Phaser.GameObjects.Text;
   private endPanel?: Phaser.GameObjects.Container;
   private hintStar?: Phaser.GameObjects.Image;
+  private nameTag?: Phaser.GameObjects.Container;
+  private hovered!: string;
 
   constructor() {
     super(ChessScene.KEY);
@@ -96,6 +98,8 @@ export class ChessScene extends Phaser.Scene {
     this.over = false;
     this.endPanel = undefined;
     this.hintStar = undefined;
+    this.nameTag = undefined;
+    this.hovered = '';
 
     // The pieces are drawn from code, so they're ready before anything shows.
     const hero = loadAvatar();
@@ -249,7 +253,28 @@ export class ChessScene extends Phaser.Scene {
       repeat: -1,
       ease: 'Sine.easeInOut',
     });
-    return this.add.container(x, y, [shadow, monster]).setDepth(10 + y / 1000);
+    const [badge, symbol] = this.addBadge(piece, size);
+    return this.add.container(x, y, [shadow, monster, badge, symbol]).setDepth(10 + y / 1000);
+  }
+
+  /** A badge with the real chess symbol, in the piece's bottom corner. */
+  private addBadge(piece: Piece, size: number): [Phaser.GameObjects.Arc, Phaser.GameObjects.Text] {
+    const radius = size * 0.22;
+    const x = size * 0.36;
+    const y = size * 0.3;
+    const badge = this.add
+      .circle(x, y, radius, 0xffffff)
+      .setStrokeStyle(4, Phaser.Display.Color.HexStringToColor(this.teams[piece.side].color).color);
+    const symbol = this.add
+      .text(x, y, PIECE_INFO[piece.kind].symbol, { fontSize: `${Math.round(radius * 1.8)}px`, color: INK })
+      .setOrigin(0.5, 0.52);
+    return [badge, symbol];
+  }
+
+  /** A pawn that becomes a queen grows, so it gets a new, bigger badge too. */
+  private setBadge(sprite: PieceSprite, piece: Piece): void {
+    sprite.list.slice(2).forEach((old) => old.destroy());
+    sprite.add(this.addBadge(piece, PIECE_SIZE));
   }
 
   /** The monster picture inside a piece. */
@@ -292,6 +317,9 @@ export class ChessScene extends Phaser.Scene {
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     const square = this.squareAt(pointer);
+    // Touching any piece says its name, even when it isn't your turn.
+    const touched = square && this.position.board[square.row][square.col];
+    if (touched && this.opponent && !this.endPanel) this.showInfo(touched, square);
     if (this.busy || this.over || !this.opponent || !square || !this.isHumanTurn()) return;
     this.clearHint();
 
@@ -307,7 +335,6 @@ export class ChessScene extends Phaser.Scene {
       this.select(null);
       return;
     }
-    this.showInfo(piece);
     if (piece.side !== this.position.turn) {
       // Not yours. It just says hello.
       this.select(null);
@@ -326,6 +353,8 @@ export class ChessScene extends Phaser.Scene {
 
   /** Dragging works too: the monster follows your finger. */
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
+    // With a mouse, hovering over a piece says its name too. Phones can't hover.
+    if (!pointer.isDown && !pointer.wasTouch) this.hoverName(pointer);
     if (!this.drag || !pointer.isDown) return;
     const sprite = this.sprites[this.drag.from.row][this.drag.from.col];
     if (!sprite) return;
@@ -450,7 +479,7 @@ export class ChessScene extends Phaser.Scene {
     this.clearHint();
     const move = pickMove(this.position, 'clever');
     this.select(move.from);
-    this.showInfo(move.piece);
+    this.showInfo(move.piece, move.from);
     sfx.star();
     this.hintStar = this.add.image(this.cellX(move.to.col), this.cellY(move.to.row), 'icon-star').setDepth(40);
     this.tweens.add({ targets: this.hintStar, scale: { from: 0.8, to: 1.3 }, angle: 20, duration: 400, yoyo: true, repeat: -1 });
@@ -582,9 +611,49 @@ export class ChessScene extends Phaser.Scene {
     }
   }
 
-  private showInfo(piece: Piece): void {
+  /** The name and moves at the bottom, and a name tag over the piece itself. */
+  private showInfo(piece: Piece, square: Square): void {
     const info = PIECE_INFO[piece.kind];
-    this.infoText.setText(`${info.name}\n${info.moves}`);
+    this.infoText.setText(`${info.symbol} ${info.name}\n${info.moves}`);
+    this.showNameTag(info.name, square);
+  }
+
+  private showNameTag(name: string, square: Square): void {
+    this.nameTag?.destroy();
+    const label = this.add
+      .text(0, 0, name, { fontFamily: FONT, fontSize: '54px', color: INK })
+      .setOrigin(0.5);
+    const width = label.width + 56;
+    const background = this.add.graphics();
+    background.fillStyle(0xffffff);
+    background.lineStyle(6, 0x4a3470);
+    background.fillRoundedRect(-width / 2, -42, width, 84, 42);
+    background.strokeRoundedRect(-width / 2, -42, width, 84, 42);
+    // Above the piece, kept on screen, so a finger doesn't cover it.
+    const x = Phaser.Math.Clamp(this.cellX(square.col), width / 2 + 10, GAME_WIDTH - width / 2 - 10);
+    const tag = this.add.container(x, this.cellY(square.row) - TILE * 0.85, [background, label]).setDepth(HUD_DEPTH - 3);
+    this.nameTag = tag;
+    tag.setScale(0.6);
+    this.tweens.add({ targets: tag, scale: 1, duration: 140, ease: 'Back.easeOut' });
+    this.tweens.add({
+      targets: tag,
+      alpha: 0,
+      delay: 1500,
+      duration: 300,
+      onComplete: () => {
+        tag.destroy();
+        if (this.nameTag === tag) this.nameTag = undefined;
+      },
+    });
+  }
+
+  private hoverName(pointer: Phaser.Input.Pointer): void {
+    const square = this.squareAt(pointer);
+    const key = square ? `${square.row},${square.col}` : '';
+    if (key === this.hovered) return;
+    this.hovered = key;
+    const piece = square && this.position.board[square.row][square.col];
+    if (piece && this.opponent && !this.endPanel) this.showNameTag(PIECE_INFO[piece.kind].name, square);
   }
 
   /** Words that float up and fade away. */
@@ -677,7 +746,9 @@ export class ChessScene extends Phaser.Scene {
       // A pawn that reaches the far side grows into a queen.
       sfx.party();
       burstStars(this, sprite.x, sprite.y, 14);
-      this.monsterOf(sprite).setTexture(pieceKey({ side: move.piece.side, kind: move.promotion })).setDisplaySize(PIECE_SIZE, PIECE_SIZE);
+      const queen: Piece = { side: move.piece.side, kind: move.promotion };
+      this.monsterOf(sprite).setTexture(pieceKey(queen)).setDisplaySize(PIECE_SIZE, PIECE_SIZE);
+      this.setBadge(sprite, queen);
       await this.tween({ targets: sprite, scale: { from: 0.3, to: 1 }, duration: 400, ease: 'Back.easeOut' });
       this.bubble(sprite.x, sprite.y - 90, 'Queen!');
     }

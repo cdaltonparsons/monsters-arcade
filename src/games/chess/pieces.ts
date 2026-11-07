@@ -17,14 +17,19 @@ const LOOKS: Record<Kind, Omit<Avatar, 'color'>> = {
   k: { body: 'ghost', eyes: 'two', mouth: 'fangs', top: 'crown', extra: 'cape' },
 };
 
-/** Names a parent can read out, and a few words on how each one moves. */
-export const PIECE_INFO: Record<Kind, { name: string; moves: string }> = {
-  p: { name: 'Pawn', moves: 'steps forward' },
-  r: { name: 'Castle', moves: 'zooms in straight lines' },
-  n: { name: 'Horsey', moves: 'jumps in an L' },
-  b: { name: 'Bishop', moves: 'zooms corner to corner' },
-  q: { name: 'Queen', moves: 'zooms any way' },
-  k: { name: 'King', moves: 'one step any way' },
+/**
+ * The real chess names, a few words on how each one moves, and the standard chess
+ * symbol. Each piece wears its symbol as a badge, so kids can match the monsters
+ * to the pieces in books and on real boards. The \uFE0E asks phones to draw the
+ * symbol as plain text, not as a colourful emoji.
+ */
+export const PIECE_INFO: Record<Kind, { name: string; moves: string; symbol: string }> = {
+  p: { name: 'Pawn', moves: 'steps forward', symbol: '\u265F\uFE0E' },
+  r: { name: 'Rook', moves: 'zooms in straight lines', symbol: '\u265C\uFE0E' },
+  n: { name: 'Knight', moves: 'jumps in an L', symbol: '\u265E\uFE0E' },
+  b: { name: 'Bishop', moves: 'zooms corner to corner', symbol: '\u265D\uFE0E' },
+  q: { name: 'Queen', moves: 'zooms any way', symbol: '\u265B\uFE0E' },
+  k: { name: 'King', moves: 'one step any way', symbol: '\u265A\uFE0E' },
 };
 
 const COLOR_NAMES: Record<Color, string> = {
