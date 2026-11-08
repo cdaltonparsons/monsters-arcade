@@ -163,3 +163,19 @@ export function avatarSvg(avatar: Avatar, frame: 1 | 2, size: number): string {
     ${MOUTHS[avatar.mouth]}
   </svg>`;
 }
+
+/**
+ * Player 2's monster: a friendly little one that never looks like player 1's,
+ * so each child can always spot which monster is theirs.
+ */
+export function buddyFor(avatar: Avatar): Avatar {
+  const colors = ['#26bfb5', '#ff7ab8', '#9a5cf0'] as const;
+  return {
+    body: avatar.body === 'round' ? 'ghost' : 'round',
+    color: colors.find((color) => color !== avatar.color) ?? colors[0],
+    eyes: 'big',
+    mouth: 'smile',
+    top: 'ears',
+    extra: 'none',
+  };
+}

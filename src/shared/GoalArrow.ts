@@ -15,6 +15,10 @@ export class GoalArrow {
     scene.tweens.add({ targets: this.image, scale: 1.2, duration: 380, yoyo: true, repeat: -1 });
   }
 
+  destroy(): void {
+    this.image.destroy();
+  }
+
   /** Call once a frame. It hides when there's no goal, or the goal is close by. */
   point(from: Point, target: Point | null, hideWithin = 340): void {
     const near = !target || Math.hypot(from.x - target.x, from.y - target.y) < hideWithin;

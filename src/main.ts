@@ -10,6 +10,8 @@ const game = new Phaser.Game({
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
   backgroundColor: BACKGROUND,
+  // Listen for up to three fingers at once, so two children can each steer.
+  input: { activePointers: 3 },
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

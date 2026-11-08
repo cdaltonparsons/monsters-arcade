@@ -66,6 +66,14 @@ style, the game loop: Phaser calls `update()` about 60 times a second, and each 
 reads the controls, sets the hero's speed, and checks what the hero has reached.
 Physics does the moving and the bumping. On a computer, the arrow keys also work.
 
+Monster Quest also has two players on one screen. Tap the button with both monsters
+under the home button. The screen splits down the middle: each half has its own
+joystick (each one tracks its own finger by `pointer.id`), and on a computer the
+first monster uses WASD and the second uses the arrow keys. It's co-op: one shared
+star pile, and if the second player lets go, their monster trots back to the first,
+so a toddler can never get lost. Neither monster can walk off the shared screen.
+Those rules are in `shared/coop.ts`, ready for other walking games.
+
 The habit worth keeping is separating rules from drawing. `board.ts`, `world.ts`,
 `farm.ts` and `rules.ts` know nothing about Phaser, so they can be unit tested like
 any service.

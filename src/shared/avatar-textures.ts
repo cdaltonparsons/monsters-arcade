@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { avatarSvg, cleanAvatar, type Avatar } from './avatar';
+import { avatarSvg, buddyFor, cleanAvatar, type Avatar } from './avatar';
 
 const SAVE_KEY = 'monster-avatar';
 
@@ -26,13 +26,17 @@ export async function addSvgTexture(game: Phaser.Game, key: string, svg: string)
 
 /**
  * Makes the pictures that Hero.ts and the menu use: `hero-1`, `hero-2` and
- * `hero-big`. Anything still showing the old pictures must be gone first, so this
+ * `hero-big`, plus `buddy-1` and `buddy-2` for player 2's monster. Anything still showing the old pictures must be gone first, so this
  * runs while moving between scenes.
  */
 export async function applyAvatar(game: Phaser.Game, avatar: Avatar): Promise<void> {
   // The animation remembers the old pictures, so Hero.ts builds a new one.
   game.anims.remove('hero-walk');
+  game.anims.remove('buddy-walk');
+  const buddy = buddyFor(avatar);
   await Promise.all([
+    addSvgTexture(game, 'buddy-1', avatarSvg(buddy, 1, 180)),
+    addSvgTexture(game, 'buddy-2', avatarSvg(buddy, 2, 180)),
     addSvgTexture(game, 'hero-1', avatarSvg(avatar, 1, 180)),
     addSvgTexture(game, 'hero-2', avatarSvg(avatar, 2, 180)),
     addSvgTexture(game, 'hero-big', avatarSvg(avatar, 1, 320)),

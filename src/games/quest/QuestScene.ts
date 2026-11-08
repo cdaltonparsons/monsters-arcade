@@ -1,12 +1,13 @@
 import Phaser from 'phaser';
 import { MONSTERS } from '../../shared/assets';
-import { FONT, HUD_DEPTH } from '../../shared/constants';
+import { FONT, GAME_HEIGHT, GAME_WIDTH, HUD_DEPTH } from '../../shared/constants';
+import { closestWithin, IDLE_BEFORE_FOLLOW, leash, trotAfter } from '../../shared/coop';
 import { GoalArrow } from '../../shared/GoalArrow';
 import { drawGrass } from '../../shared/ground';
 import { Hero } from '../../shared/Hero';
 import { Joystick } from '../../shared/Joystick';
 import { sfx } from '../../shared/sfx';
-import { addHomeButton, burstStars } from '../../shared/ui';
+import { addHomeButton, addPlayersButton, burstStars, loadTwoPlayers } from '../../shared/ui';
 import houseArt from './art/house.svg?url';
 import pondArt from './art/pond.svg?url';
 import rockArt from './art/rock.svg?url';
@@ -29,6 +30,11 @@ const HOME_REACH = 330;
 const TRAIL_STEP = 12; // Remember the hero's position every this many pixels...
 const TRAIL_GAP = 11; // ...and leave this many remembered positions between followers.
 
+// With two players, both monsters must fit on screen, clear of the buttons and joysticks.
+const LEASH = { maxDx: GAME_WIDTH - 260, maxDy: GAME_HEIGHT - 760 };
+const P1_RING = 0xff9130;
+const P2_RING = 0x26bfb5;
+
 /**
  * Where the picture sits relative to its solid circle. `originY` lines the
  * circle up with the bottom of the art, so you can walk behind the treetops.
@@ -46,6 +52,20 @@ interface Baby {
 }
 
 /**
+ * Everything one child steers. With two players there are two of these, and each
+ * has its own babies trailing behind, its own arrow and its own joystick.
+ */
+interface Player {
+  walker: Hero;
+  hero: Phaser.Physics.Arcade.Sprite;
+  joystick: Joystick;
+  arrow: GoalArrow;
+  trail: Point[];
+  followers: Baby[];
+  lastSteeredAt: number;
+}
+
+/**
  * A walk-around game. Unlike match 3, which waits for a tap, this has an update()
  * method that Phaser calls about 60 times a second. Each call: read the controls,
  * set the hero's speed, and let physics move it and stop it at obstacles.
@@ -55,16 +75,14 @@ export class QuestScene extends Phaser.Scene {
 
   private world!: World;
   private round!: number;
-  private walker!: Hero;
-  private hero!: Phaser.Physics.Arcade.Sprite;
-  private arrow!: GoalArrow;
-  private joystick!: Joystick;
+  private players!: Player[];
+  private blockers!: Phaser.Physics.Arcade.StaticGroup;
+  /** An invisible spot halfway between the players, for the camera to follow. */
+  private middle!: Phaser.GameObjects.Zone;
 
   private lostBabies!: Baby[];
-  private followers!: Baby[];
   private homeCount!: number;
   private babySlots!: Phaser.GameObjects.Image[];
-  private trail!: Point[];
 
   private stars!: Phaser.GameObjects.Image[];
   private starCount!: number;
@@ -85,7 +103,7 @@ export class QuestScene extends Phaser.Scene {
 
   create(data: { round?: number }): void {
     this.round = data.round ?? 1;
-    this.followers = [];
+    this.players = [];
     this.homeCount = 0;
     this.starCount = 0;
     this.lastThudAt = 0;
@@ -94,20 +112,66 @@ export class QuestScene extends Phaser.Scene {
     this.world = generateWorld(babyCount, STAR_COUNT);
 
     drawGrass(this, WORLD_WIDTH, WORLD_HEIGHT);
-    const blockers = this.addObstacles();
-    this.walker = new Hero(this, this.world.start.x, this.world.start.y);
-    this.hero = this.walker.sprite;
+    this.blockers = this.addObstacles();
     this.addPickups();
-    // The small numbers make the camera glide along a little behind the hero.
-    this.cameras.main.startFollow(this.hero, true, 0.12, 0.12);
+    this.middle = this.add.zone(this.world.start.x, this.world.start.y, 1, 1);
+    // The small numbers make the camera glide along a little behind the heroes.
+    this.cameras.main.startFollow(this.middle, true, 0.12, 0.12);
     this.addHud(babyCount);
-    this.joystick = new Joystick(this);
-    this.arrow = new GoalArrow(this);
+    this.addPlayer(this.world.start);
+    if (loadTwoPlayers()) this.setTwoPlayers(true);
+  }
 
-    // When the hero bumps into something solid, call onBump.
-    this.physics.add.collider(this.hero, blockers, (_hero, blocker) => {
+  // ---------------------------------------------------------------- One or two players
+
+  private addPlayer(at: Point): void {
+    const second = this.players.length === 1;
+    const walker = new Hero(this, at.x, at.y, second ? 'buddy' : 'hero', second ? P2_RING : undefined);
+    const hero = walker.sprite;
+    // When a hero bumps into something solid, call onBump.
+    this.physics.add.collider(hero, this.blockers, (_hero, blocker) => {
       this.onBump(blocker as Phaser.GameObjects.Arc);
     });
+    this.players.push({
+      walker,
+      hero,
+      joystick: new Joystick(this),
+      arrow: new GoalArrow(this),
+      trail: [{ x: at.x, y: at.y }],
+      followers: [],
+      lastSteeredAt: 0,
+    });
+  }
+
+  /**
+   * With two players, the screen splits down the middle: the left half steers the
+   * first monster (or WASD), the right half steers player 2's (or the arrow keys).
+   */
+  private setTwoPlayers(on: boolean): void {
+    const [first, second] = this.players;
+    first.joystick.destroy();
+    if (on && !second) {
+      this.addPlayer({ x: Math.min(first.hero.x + 160, WORLD_WIDTH - 100), y: first.hero.y });
+      const buddy = this.players[1];
+      buddy.joystick.destroy();
+      buddy.joystick = new Joystick(this, { side: 'right', keys: 'arrows', color: P2_RING });
+      first.joystick = new Joystick(this, { side: 'left', keys: 'wasd', color: P1_RING });
+      first.walker.setRing(P1_RING);
+      burstStars(this, buddy.hero.x, buddy.hero.y, 10);
+      sfx.chirp();
+      return;
+    }
+    if (!on && second) {
+      // Player 2 goes off for a nap, and any babies following them follow player 1.
+      first.followers.push(...second.followers);
+      burstStars(this, second.hero.x, second.hero.y, 6);
+      second.walker.destroy();
+      second.joystick.destroy();
+      second.arrow.destroy();
+      this.players.pop();
+    }
+    first.walker.setRing();
+    first.joystick = new Joystick(this);
   }
 
   // ---------------------------------------------------------------- Building the world
@@ -167,12 +231,12 @@ export class QuestScene extends Phaser.Scene {
       });
       return star;
     });
-    this.trail = [{ x: this.hero.x, y: this.hero.y }];
   }
 
   /** setScrollFactor(0) pins something to the screen instead of the world. */
   private addHud(babyCount: number): void {
     addHomeButton(this).setScrollFactor(0).setDepth(HUD_DEPTH);
+    addPlayersButton(this, (twoPlayers) => this.setTwoPlayers(twoPlayers));
 
     this.babySlots = this.lostBabies.map(({ texture }, index) => {
       const size = babyCount > 5 ? 74 : 92;
@@ -198,31 +262,55 @@ export class QuestScene extends Phaser.Scene {
 
   /** Runs about 60 times a second. `delta` is the milliseconds since the last run. */
   update(_time: number, delta: number): void {
-    this.moveHero();
-    this.moveFollowers(delta);
+    this.players.forEach((player) => this.moveHero(player));
+    this.followTheMiddle();
+    this.players.forEach((player) => this.moveFollowers(player, delta));
     this.collectStars();
     this.findBabies();
-    this.checkHome();
-    this.arrow.point(this.hero, this.nextGoal());
+    this.players.forEach((player) => this.checkHome(player));
+    this.players.forEach((player) => player.arrow.point(player.hero, this.nextGoal(player)));
   }
 
-  private moveHero(): void {
-    this.walker.walk(this.joystick.read());
+  private moveHero(player: Player): void {
+    const { hero, trail } = player;
+    let push = player.joystick.read();
+    const friend = this.players.find((other) => other !== player);
+    if (push.lengthSq() > 0.01) player.lastSteeredAt = this.time.now;
+
+    if (friend) {
+      // Player 2's monster trots back to player 1 when nobody is steering it.
+      const resting = this.time.now - player.lastSteeredAt > IDLE_BEFORE_FOLLOW;
+      if (player === this.players[1] && resting) {
+        const trot = trotAfter(hero, friend.hero);
+        push = new Phaser.Math.Vector2(trot.x, trot.y);
+      }
+      // Neither monster may wander off the shared screen.
+      const kept = leash(push, hero, friend.hero, LEASH);
+      push = new Phaser.Math.Vector2(kept.x, kept.y);
+    }
+    player.walker.walk(push);
 
     // Leave a trail of breadcrumbs for the followers.
-    const last = this.trail[this.trail.length - 1];
-    if (Math.hypot(this.hero.x - last.x, this.hero.y - last.y) >= TRAIL_STEP) {
-      this.trail.push({ x: this.hero.x, y: this.hero.y });
+    const last = trail[trail.length - 1];
+    if (Math.hypot(hero.x - last.x, hero.y - last.y) >= TRAIL_STEP) {
+      trail.push({ x: hero.x, y: hero.y });
       const longestNeeded = (MOST_BABIES + 2) * TRAIL_GAP;
-      if (this.trail.length > longestNeeded) this.trail.shift();
+      if (trail.length > longestNeeded) trail.shift();
     }
   }
 
-  /** Each follower heads for a spot further back along the hero's trail. */
-  private moveFollowers(delta: number): void {
+  /** The camera watches the spot halfway between the players (or the only player). */
+  private followTheMiddle(): void {
+    const x = this.players.reduce((sum, { hero }) => sum + hero.x, 0) / this.players.length;
+    const y = this.players.reduce((sum, { hero }) => sum + hero.y, 0) / this.players.length;
+    this.middle.setPosition(x, y);
+  }
+
+  /** Each follower heads for a spot further back along its hero's trail. */
+  private moveFollowers({ followers, trail }: Player, delta: number): void {
     const catchUp = Math.min(1, (delta / 1000) * 10);
-    this.followers.forEach(({ image }, index) => {
-      const spot = this.trail[Math.max(0, this.trail.length - 1 - (index + 1) * TRAIL_GAP)];
+    followers.forEach(({ image }, index) => {
+      const spot = trail[Math.max(0, trail.length - 1 - (index + 1) * TRAIL_GAP)];
       image.x += (spot.x - image.x) * catchUp;
       image.y += (spot.y + 40 - image.y) * catchUp;
       image.setDepth(image.y + 50);
@@ -230,13 +318,15 @@ export class QuestScene extends Phaser.Scene {
     });
   }
 
-  private isNearHero(point: Point, reach: number): boolean {
-    return Math.hypot(this.hero.x - point.x, this.hero.y - point.y) < reach;
+  /** Which player is close enough to pick this up, or undefined if nobody is. */
+  private playerNear(point: Point, reach: number): Player | undefined {
+    return this.players[closestWithin(this.players.map(({ hero }) => hero), point, reach)];
   }
 
+  /** Stars go in one shared pile: both children are on the same team. */
   private collectStars(): void {
     this.stars = this.stars.filter((star) => {
-      if (!this.isNearHero(star, REACH)) return true;
+      if (!this.playerNear(star, REACH)) return true;
       this.tweens.killTweensOf(star);
       burstStars(this, star.x, star.y, 5);
       star.destroy();
@@ -249,22 +339,23 @@ export class QuestScene extends Phaser.Scene {
 
   private findBabies(): void {
     this.lostBabies = this.lostBabies.filter((baby) => {
-      if (!this.isNearHero(baby.image, REACH + 20)) return true;
+      const finder = this.playerNear(baby.image, REACH + 20);
+      if (!finder) return true;
       this.tweens.killTweensOf(baby.image);
       burstStars(this, baby.image.x, baby.image.y, 8);
       sfx.chirp();
-      this.followers.push(baby);
+      finder.followers.push(baby);
       return false;
     });
   }
 
   /** Bring followers to the door, and they run inside. */
-  private checkHome(): void {
-    if (this.followers.length === 0) return;
-    if (!this.isNearHero(this.world.start, HOME_REACH)) return;
+  private checkHome(player: Player): void {
+    if (player.followers.length === 0) return;
+    if (Math.hypot(player.hero.x - this.world.start.x, player.hero.y - this.world.start.y) >= HOME_REACH) return;
 
-    const arriving = this.followers;
-    this.followers = [];
+    const arriving = player.followers;
+    player.followers = [];
     arriving.forEach((baby, index) => {
       this.tweens.add({
         targets: baby.image,
@@ -297,18 +388,19 @@ export class QuestScene extends Phaser.Scene {
     sfx.party();
     for (let i = 0; i < 10; i++) {
       this.time.delayedCall(i * 170, () => {
-        burstStars(this, this.hero.x + Phaser.Math.Between(-420, 420), this.hero.y + Phaser.Math.Between(-700, 500), 14);
+        burstStars(this, this.middle.x + Phaser.Math.Between(-420, 420), this.middle.y + Phaser.Math.Between(-700, 500), 14);
       });
     }
     this.time.delayedCall(2800, () => this.scene.restart({ round: this.round + 1 }));
   }
 
-  /** What the arrow points at: the closest lost baby, then home. */
-  private nextGoal(): Point | null {
-    if (this.lostBabies.length === 0) return this.followers.length > 0 ? this.world.start : null;
+  /** What a player's arrow points at: home if babies are following, else the closest lost baby. */
+  private nextGoal({ hero, followers }: Player): Point | null {
+    if (this.lostBabies.length === 0 || (followers.length > 0 && this.players.length > 1)) {
+      return followers.length > 0 ? this.world.start : null;
+    }
     const closest = [...this.lostBabies].sort(
-      (a, b) =>
-        Phaser.Math.Distance.BetweenPoints(this.hero, a.image) - Phaser.Math.Distance.BetweenPoints(this.hero, b.image),
+      (a, b) => Phaser.Math.Distance.BetweenPoints(hero, a.image) - Phaser.Math.Distance.BetweenPoints(hero, b.image),
     )[0];
     return closest.image;
   }
