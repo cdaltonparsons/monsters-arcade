@@ -1,10 +1,8 @@
 import Phaser from 'phaser';
 import { FONT, GAME_HEIGHT, GAME_WIDTH, HUD_DEPTH, INK } from '../../shared/constants';
-import { GoalArrow } from '../../shared/GoalArrow';
 import { drawGrass } from '../../shared/ground';
-import { Hero } from '../../shared/Hero';
-import { Joystick } from '../../shared/Joystick';
 import { sfx } from '../../shared/sfx';
+import { Team, type TeamPlayer } from '../../shared/Team';
 import { addHomeButton, burstStars } from '../../shared/ui';
 import boulderArt from './art/boulder.svg?url';
 import bushArt from './art/bush.svg?url';
@@ -27,14 +25,25 @@ const SPOT_ART: Record<SpotKind, { key: string; originY: number }> = {
   tree: { key: 'scenery-tree', originY: 0.9 },
 };
 
+/**
+ * What the game remembers for each player: friends trailing behind them when
+ * seeking, and the spot they're crouched behind when hiding.
+ */
+export interface Seat {
+  followers: Phaser.GameObjects.Image[];
+  spot: number | null;
+  hiddenForMs: number;
+}
+export type Player = TeamPlayer<Seat>;
+
 /** Each way of playing is a class with an update(), and the scene runs whichever is active. */
 export interface Mode {
   update(delta: number): void;
 }
 
 /**
- * Sets up what both ways of playing share: the field, the hero, the controls and
- * the star count. It starts by asking who's hiding, then hands over to SeekMode
+ * Sets up what both ways of playing share: the field, the heroes (one or two
+ * players, see shared/Team.ts), the controls and the star count. It starts by asking who's hiding, then hands over to SeekMode
  * or HideMode. Think of those as child components, with this as their parent.
  */
 export class HideSeekScene extends Phaser.Scene {
@@ -42,9 +51,7 @@ export class HideSeekScene extends Phaser.Scene {
 
   field!: Field;
   spotArt!: Phaser.GameObjects.Image[];
-  walker!: Hero;
-  joystick!: Joystick;
-  arrow!: GoalArrow;
+  team!: Team<Seat>;
 
   private mode!: Mode | null;
   private round!: number;
@@ -75,12 +82,18 @@ export class HideSeekScene extends Phaser.Scene {
       return this.add.image(spot.x, spot.y, key).setOrigin(0.5, originY).setDepth(spot.y);
     });
 
-    this.walker = new Hero(this, this.field.start.x, this.field.start.y);
-    this.cameras.main.startFollow(this.walker.sprite, true, 0.12, 0.12);
-    this.joystick = new Joystick(this);
-    this.arrow = new GoalArrow(this);
+    this.team = new Team<Seat>(this, this.field.start, {
+      makeData: () => ({ followers: [], spot: null, hiddenForMs: 0 }),
+      // Friends following player 2 follow player 1 instead.
+      onLeave: (leaving, stayer) => stayer.data.followers.push(...leaving.data.followers),
+    });
     this.addHud();
     this.addPicker();
+    this.team.addPlayersButton();
+  }
+
+  get players(): Player[] {
+    return this.team.players;
   }
 
   /** Phaser calls this about 60 times a second, whichever mode is playing. */
@@ -88,9 +101,12 @@ export class HideSeekScene extends Phaser.Scene {
     if (this.mode) {
       this.mode.update(delta);
     } else {
-      this.walker.walk(Phaser.Math.Vector2.ZERO);
-      this.arrow.point(this.walker.sprite, null);
+      for (const { walker, arrow, hero } of this.players) {
+        walker.walk(Phaser.Math.Vector2.ZERO);
+        arrow.point(hero, null);
+      }
     }
+    this.team.update();
   }
 
   // ---------------------------------------------------------------- Screen furniture
@@ -196,7 +212,7 @@ export class HideSeekScene extends Phaser.Scene {
   /** Everyone cheers, then back to the cards for another go. */
   endRound(nextRound = this.round): void {
     sfx.party();
-    const { x, y } = this.walker.sprite;
+    const { x, y } = this.team.middle;
     for (let i = 0; i < 10; i++) {
       this.time.delayedCall(i * 170, () => {
         burstStars(this, x + Phaser.Math.Between(-420, 420), y + Phaser.Math.Between(-700, 500), 14);

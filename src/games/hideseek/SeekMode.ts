@@ -3,7 +3,7 @@ import { MONSTERS } from '../../shared/assets';
 import { FONT, GAME_HEIGHT, GAME_WIDTH, HUD_DEPTH, INK } from '../../shared/constants';
 import { sfx } from '../../shared/sfx';
 import { burstStars } from '../../shared/ui';
-import type { HideSeekScene, Mode } from './HideSeekScene';
+import type { HideSeekScene, Mode, Player } from './HideSeekScene';
 import {
   closestHiddenFriend,
   fillSpots,
@@ -30,12 +30,12 @@ interface Friend {
 /**
  * The kid seeks. The friends run off while everyone counts, and each spot the
  * hero reaches gets looked behind automatically, so there's nothing to tap.
+ * With two players, both search, and a found friend follows whoever found it.
  */
 export class SeekMode implements Mode {
   private readonly surprises: Surprise[];
   private readonly searched = new Set<number>();
   private readonly friends: Friend[];
-  private readonly followers: Friend[] = [];
 
   private searching = false;
   private msSinceLastFind = 0;
@@ -130,27 +130,30 @@ export class SeekMode implements Mode {
 
   update(delta: number): void {
     const { scene } = this;
-    const hero = scene.walker.sprite;
 
-    scene.walker.walk(this.searching ? scene.joystick.read() : Phaser.Math.Vector2.ZERO);
-    this.moveFollowers(delta);
+    for (const player of scene.players) {
+      player.walker.walk(this.searching ? scene.team.push(player) : Phaser.Math.Vector2.ZERO);
+      this.moveFollowers(player, delta);
+    }
 
     if (!this.searching) {
-      scene.arrow.point(hero, null);
+      for (const { arrow, hero } of scene.players) arrow.point(hero, null);
       return;
     }
 
-    for (const spotIndex of spotsToSearch(hero, scene.field.spots, this.searched)) {
-      this.lookBehind(spotIndex);
+    for (const player of scene.players) {
+      for (const spotIndex of spotsToSearch(player.hero, scene.field.spots, this.searched)) {
+        this.lookBehind(spotIndex, player);
+      }
     }
     this.giveHints(delta);
   }
 
   /** Each found friend chases the one in front, so they form a wobbly line. */
-  private moveFollowers(delta: number): void {
+  private moveFollowers({ hero, data }: Player, delta: number): void {
     const catchUp = Math.min(1, (delta / 1000) * 6);
-    let leader: Point = this.scene.walker.sprite;
-    this.followers.forEach(({ image }, index) => {
+    let leader: Point = hero;
+    data.followers.forEach((image, index) => {
       const away = Math.hypot(leader.x - image.x, leader.y - image.y);
       if (away > FOLLOW_GAP) {
         const pull = ((away - FOLLOW_GAP) / away) * catchUp;
@@ -165,7 +168,7 @@ export class SeekMode implements Mode {
 
   // ---------------------------------------------------------------- Looking behind things
 
-  private lookBehind(spotIndex: number): void {
+  private lookBehind(spotIndex: number, finder: Player): void {
     const { scene } = this;
     this.searched.add(spotIndex);
     scene.wiggle(spotIndex, 5);
@@ -173,12 +176,12 @@ export class SeekMode implements Mode {
     scene.spotArt[spotIndex].setTint(0xd8d8d8);
 
     const surprise = this.surprises[spotIndex];
-    if (surprise === 'friend') this.foundFriend(spotIndex);
+    if (surprise === 'friend') this.foundFriend(spotIndex, finder);
     else if (surprise === 'star') this.foundStar(spotIndex);
     else this.foundButterfly(spotIndex);
   }
 
-  private foundFriend(spotIndex: number): void {
+  private foundFriend(spotIndex: number, finder: Player): void {
     const { scene } = this;
     const friend = this.friends.find((candidate) => candidate.spotIndex === spotIndex)!;
     const { image } = friend;
@@ -194,19 +197,23 @@ export class SeekMode implements Mode {
     this.msSinceLastFind = 0;
     this.foundCount++;
 
-    // A big happy jump, then it joins the line behind the hero.
+    // A big happy jump, then it joins the line behind whoever found it.
     scene.tweens.add({
       targets: image,
       y: hide.y - 160,
       duration: 240,
       yoyo: true,
       ease: 'Sine.easeOut',
-      onComplete: () => this.followers.push(friend),
+      onComplete: () => {
+        // Player 2 may have left mid-jump, so fall back to player 1.
+        const leader = scene.players.includes(finder) ? finder : scene.team.first;
+        leader.data.followers.push(image);
+      },
     });
 
     if (this.foundCount === this.friends.length) {
       this.searching = false;
-      scene.arrow.point(scene.walker.sprite, null);
+      for (const { arrow, hero } of scene.players) arrow.point(hero, null);
       scene.time.delayedCall(700, () => scene.endRound(this.round + 1));
     }
   }
@@ -251,24 +258,28 @@ export class SeekMode implements Mode {
 
   // ---------------------------------------------------------------- Hints
 
-  /** Nearest hiding friend rustles its spot. Later it peeks out, and later still the arrow helps. */
+  /**
+   * Nearest hiding friend rustles its spot. Later it peeks out, and later still
+   * the arrow helps. With two players, each arrow points to the friend nearest
+   * that player, and the rustling is near whoever is closer.
+   */
   private giveHints(delta: number): void {
     const { scene } = this;
-    const hero = scene.walker.sprite;
     const { spots } = scene.field;
 
     this.msSinceLastFind += delta;
     this.msSinceRustle += delta;
+    const hint = hintFor(this.msSinceLastFind);
 
-    const closest = closestHiddenFriend(hero, spots, this.surprises, this.searched);
-    if (closest === null) {
-      scene.arrow.point(hero, null);
-      return;
+    for (const { arrow, hero } of scene.players) {
+      const nearest = closestHiddenFriend(hero, spots, this.surprises, this.searched);
+      arrow.point(hero, hint === 'arrow' && nearest !== null ? hidePoint(spots[nearest]) : null);
     }
 
+    const hero = scene.team.middle;
+    const closest = closestHiddenFriend(hero, spots, this.surprises, this.searched);
+    if (closest === null) return;
     const hide = hidePoint(spots[closest]);
-    const hint = hintFor(this.msSinceLastFind);
-    scene.arrow.point(hero, hint === 'arrow' ? hide : null);
 
     const away = Math.hypot(hero.x - hide.x, hero.y - hide.y);
     if (this.msSinceRustle < rustleEvery(away)) return;

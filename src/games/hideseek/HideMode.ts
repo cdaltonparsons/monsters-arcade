@@ -3,7 +3,7 @@ import { MONSTERS } from '../../shared/assets';
 import { FONT, HUD_DEPTH, INK, GAME_WIDTH } from '../../shared/constants';
 import { sfx } from '../../shared/sfx';
 import { burstStars } from '../../shared/ui';
-import type { HideSeekScene, Mode } from './HideSeekScene';
+import type { HideSeekScene, Mode, Player } from './HideSeekScene';
 import { closestSpot, HIDE_REACH, hidePoint, seekerMayStart, seekerRoute, type Point } from './rules';
 
 const SEEKER_SIZE = 190;
@@ -15,21 +15,24 @@ const LOOK_MS = 800;
 /**
  * The kid hides. A monster counts with a blindfold on, and it only comes looking
  * once the hero is behind something. There's no timer, so a slow hider is fine.
+ * With two players, it waits until both are hidden, then finds them one by one.
+ * If player 2 stands still, their monster trots over and hides with player 1.
  */
 export class HideMode implements Mode {
   private readonly seeker: Phaser.GameObjects.Image;
   private readonly blindfold: Phaser.GameObjects.Rectangle;
   private readonly countLabel: Phaser.GameObjects.Text;
 
-  private heroSpot: number | null = null;
-  private hiddenForMs = 0;
   private count = 1;
   private seeking = false;
 
   constructor(private readonly scene: HideSeekScene) {
     const { start } = scene.field;
-    const hero = scene.walker.sprite;
-    hero.setPosition(start.x, start.y + 150);
+    scene.players.forEach(({ hero, data }, index) => {
+      hero.setPosition(start.x + index * 160, start.y + 150);
+      data.spot = null;
+      data.hiddenForMs = 0;
+    });
 
     const texture = Phaser.Utils.Array.GetRandom(MONSTERS);
     this.seeker = scene.add
@@ -71,53 +74,74 @@ export class HideMode implements Mode {
 
   update(delta: number): void {
     const { scene } = this;
-    const hero = scene.walker.sprite;
 
     if (this.seeking) {
-      scene.walker.walk(Phaser.Math.Vector2.ZERO);
-      scene.arrow.point(hero, null);
+      for (const { walker, arrow, hero } of scene.players) {
+        walker.walk(Phaser.Math.Vector2.ZERO);
+        arrow.point(hero, null);
+      }
       this.seeker.setDepth(this.seeker.y + 90);
       return;
     }
 
-    const push = scene.joystick.read();
-    scene.walker.walk(push);
+    for (const player of scene.players) this.updateHider(player, delta);
+
+    const everyoneHidden = scene.players.every(({ data }) => data.spot !== null);
+    const shortestWait = Math.min(...scene.players.map(({ data }) => data.hiddenForMs));
+    if (everyoneHidden && seekerMayStart(this.count, shortestWait)) this.startSeeking();
+  }
+
+  private updateHider(player: Player, delta: number): void {
+    const { scene } = this;
+    const { hero, data } = player;
+    // Someone who's hidden stays put, instead of trotting after their friend.
+    const push = scene.team.push(player, { trot: data.spot === null });
+    player.walker.walk(push);
 
     if (push.lengthSq() > 0.01) {
-      this.leaveHidingSpot();
-    } else if (this.heroSpot === null) {
+      this.leaveHidingSpot(player);
+    } else if (data.spot === null) {
       const near = closestSpot(hero, scene.field.spots, HIDE_REACH);
-      if (near !== null) this.duckBehind(near);
+      if (near !== null) this.duckBehind(player, near);
     } else {
-      this.hiddenForMs += delta;
-      if (seekerMayStart(this.count, this.hiddenForMs)) this.startSeeking();
+      data.hiddenForMs += delta;
     }
 
     // Until hidden, the arrow points to the nearest place to hide.
     const nearest = closestSpot(hero, scene.field.spots)!;
-    const goal: Point | null = this.heroSpot === null ? hidePoint(scene.field.spots[nearest]) : null;
-    scene.arrow.point(hero, goal, HIDE_REACH);
+    const goal: Point | null = data.spot === null ? hidePoint(scene.field.spots[nearest]) : null;
+    player.arrow.point(hero, goal, HIDE_REACH);
   }
 
   // ---------------------------------------------------------------- Hiding
 
-  /** A tween slides the hero behind the spot. Depth sorting by y does the actual hiding. */
-  private duckBehind(spotIndex: number): void {
+  /**
+   * A tween slides the hero behind the spot. Depth sorting by y does the actual
+   * hiding. Two players can share a spot: the second one squeezes in beside.
+   */
+  private duckBehind(player: Player, spotIndex: number): void {
     const { scene } = this;
     const spot = scene.field.spots[spotIndex];
     const hide = hidePoint(spot);
-    this.heroSpot = spotIndex;
-    this.hiddenForMs = 0;
-    scene.tweens.add({ targets: scene.walker.sprite, x: hide.x, y: hide.y, duration: 220, ease: 'Sine.easeOut' });
+    const sharing = scene.players.some((other) => other !== player && other.data.spot === spotIndex);
+    player.data.spot = spotIndex;
+    player.data.hiddenForMs = 0;
+    scene.tweens.add({
+      targets: player.hero,
+      x: hide.x + (sharing ? 70 : 0),
+      y: hide.y,
+      duration: 220,
+      ease: 'Sine.easeOut',
+    });
     scene.wiggle(spotIndex, 4);
     scene.bubble(spot.x, spot.y - 260, 'Shh!');
     sfx.boing();
   }
 
-  private leaveHidingSpot(): void {
-    if (this.heroSpot === null) return;
-    this.heroSpot = null;
-    this.scene.tweens.killTweensOf(this.scene.walker.sprite);
+  private leaveHidingSpot({ hero, data }: Player): void {
+    if (data.spot === null) return;
+    data.spot = null;
+    this.scene.tweens.killTweensOf(hero);
   }
 
   // ---------------------------------------------------------------- Seeking
@@ -133,11 +157,14 @@ export class HideMode implements Mode {
     // Follow the seeker now: the fun is watching it get closer and closer.
     scene.cameras.main.startFollow(this.seeker, true, 0.08, 0.08);
 
-    const route = seekerRoute(this.seeker, scene.field.spots, this.heroSpot!);
+    // Head for one hider, with a few wrong guesses on the way, then the other.
+    const [firstSpot, ...otherSpots] = scene.players.map(({ data }) => data.spot!);
+    const route = seekerRoute(this.seeker, scene.field.spots, firstSpot);
+    for (const spot of otherSpots) if (!route.includes(spot)) route.push(spot);
     scene.time.delayedCall(1100, () => this.visit(route, 0));
   }
 
-  /** Walk to one spot, look behind it, then go to the next. The last one has the hero. */
+  /** Walk to one spot, look behind it, then go to the next, until everyone is found. */
   private visit(route: number[], step: number): void {
     const { scene } = this;
     const spotIndex = route[step];
@@ -161,32 +188,39 @@ export class HideMode implements Mode {
       onComplete: () => {
         waddle.stop();
         this.seeker.setAngle(0);
-        const isLast = step === route.length - 1;
         scene.wiggle(spotIndex, 5);
-        if (isLast) {
-          this.found(route);
-          return;
+        const hiding = scene.players.filter(({ data }) => data.spot === spotIndex);
+        if (hiding.length > 0) {
+          this.found(hiding, spotIndex);
+        } else {
+          scene.bubble(spot.x, spot.y - 260, '?');
+          sfx.boing();
         }
-        scene.bubble(spot.x, spot.y - 260, '?');
-        sfx.boing();
-        scene.time.delayedCall(LOOK_MS, () => this.visit(route, step + 1));
+        // Each spot looked behind is a star for the hiders.
+        const done = step === route.length - 1 || scene.players.every(({ data }) => data.spot === null);
+        if (done) {
+          scene.addStars(step + 1);
+          scene.time.delayedCall(500, () => scene.endRound());
+        } else {
+          scene.time.delayedCall(LOOK_MS + (hiding.length > 0 ? 600 : 0), () => this.visit(route, step + 1));
+        }
       },
     });
   }
 
-  /** Found! The hero jumps out, everybody's delighted, and each wrong guess was a star. */
-  private found(route: number[]): void {
+  /** Found! The hiders jump out, and everybody's delighted. */
+  private found(hiding: Player[], spotIndex: number): void {
     const { scene } = this;
-    const hero = scene.walker.sprite;
-    const spot = scene.field.spots[this.heroSpot!];
-    const out = { x: spot.x - 170, y: spot.y + 90 };
+    const spot = scene.field.spots[spotIndex];
 
-    scene.tweens.add({ targets: hero, ...out, duration: 320, ease: 'Back.easeOut' });
+    hiding.forEach(({ hero, data }, index) => {
+      data.spot = null;
+      const out = { x: spot.x + (index === 0 ? -170 : 170), y: spot.y + 90 };
+      scene.tweens.add({ targets: hero, ...out, duration: 320, ease: 'Back.easeOut' });
+    });
     scene.tweens.add({ targets: this.seeker, y: this.seeker.y - 120, duration: 220, yoyo: true, repeat: 3, ease: 'Sine.easeOut' });
     scene.bubble(spot.x, spot.y - 280, 'Found you!');
     burstStars(scene, spot.x, spot.y - 100, 14);
     sfx.chirp();
-    scene.addStars(route.length);
-    scene.time.delayedCall(500, () => scene.endRound());
   }
 }
