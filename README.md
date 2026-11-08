@@ -69,7 +69,8 @@ Physics does the moving and the bumping. On a computer, the arrow keys also work
 Monster Quest and Hide and Seek also have two players on one screen. Tap the
 button with both monsters under the home button. The screen splits down the middle:
 each half has its own joystick (each one tracks its own finger by `pointer.id`), and
-on a computer the first monster uses WASD and the second uses the arrow keys. It's
+on a laptop the first monster uses WASD and the second uses the arrow keys, and the
+joysticks stay hidden. It's
 co-op: one shared star pile, and if the second player lets go, their monster trots
 back to the first, so a toddler can never get lost. Neither monster can walk off the
 shared screen. In "You hide", the seeker waits until both are hidden.

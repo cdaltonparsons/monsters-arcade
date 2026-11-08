@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
-import { GAME_HEIGHT, GAME_WIDTH } from './constants';
+import { FONT, GAME_HEIGHT, GAME_WIDTH, HUD_DEPTH, INK } from './constants';
 import { IDLE_BEFORE_FOLLOW, leash, trotAfter, type Leash, type Point } from './coop';
 import { GoalArrow } from './GoalArrow';
 import { Hero } from './Hero';
-import { Joystick } from './Joystick';
+import { HAS_TOUCH, Joystick } from './Joystick';
 import { sfx } from './sfx';
 import { addPlayersButton, burstStars, loadTwoPlayers } from './ui';
 
@@ -108,6 +108,10 @@ export class Team<T> {
       first.walker.setRing(P1_RING);
       burstStars(this.scene, buddy.hero.x, buddy.hero.y, 10);
       sfx.chirp();
+      if (!HAS_TOUCH) {
+        this.showKeys(first, 'W A S D');
+        this.showKeys(buddy, '↑ ← ↓ →');
+      }
       return;
     }
     if (!on && second) {
@@ -121,6 +125,26 @@ export class Team<T> {
     }
     first.walker.setRing();
     first.joystick = new Joystick(this.scene);
+  }
+
+  /** On a laptop, a label over each monster says which keys steer it, then fades. */
+  private showKeys({ hero }: TeamPlayer<T>, keys: string): void {
+    const label = this.scene.add
+      .text(hero.x, hero.y - 150, keys, { fontFamily: FONT, fontSize: '56px', color: '#ffffff', stroke: INK, strokeThickness: 10 })
+      .setOrigin(0.5)
+      .setDepth(HUD_DEPTH - 2);
+    const follow = () => label.setPosition(hero.x, hero.y - 150);
+    this.scene.events.on('update', follow);
+    this.scene.tweens.add({
+      targets: label,
+      alpha: 0,
+      delay: 3000,
+      duration: 600,
+      onComplete: () => {
+        this.scene.events.off('update', follow);
+        label.destroy();
+      },
+    });
   }
 
   private join(at: Point): TeamPlayer<T> {

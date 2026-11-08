@@ -3,6 +3,12 @@ import { GAME_HEIGHT, GAME_WIDTH, HUD_DEPTH } from './constants';
 
 const REACH = 130; // How far to drag for full speed.
 
+/**
+ * Phones and tablets show the resting joystick as a reminder. On a laptop the
+ * keyboard does the steering, so the joystick only shows while the mouse drags it.
+ */
+export const HAS_TOUCH = navigator.maxTouchPoints > 0;
+
 export interface JoystickOptions {
   /** Only listen to fingers on this half of the screen. Leave out for the whole screen. */
   side?: 'left' | 'right';
@@ -21,7 +27,7 @@ interface Keys {
 
 /**
  * A joystick that appears wherever a finger lands, so small hands can't miss it.
- * It rests faintly at the bottom of the screen to show that it's there.
+ * On touch screens it rests faintly at the bottom to show that it's there.
  *
  * Each joystick remembers which finger is steering it (`pointer.id`), so with two
  * players, two joysticks can be dragged at the same time on one screen.
@@ -108,7 +114,8 @@ export class Joystick {
     this.push = new Phaser.Math.Vector2();
     const x = { left: GAME_WIDTH * 0.27, right: GAME_WIDTH * 0.73, whole: GAME_WIDTH / 2 }[this.options.side ?? 'whole'];
     const y = GAME_HEIGHT - 260;
-    this.base.setPosition(x, y).setAlpha(0.5);
-    this.knob.setPosition(x, y).setAlpha(0.5);
+    const alpha = HAS_TOUCH ? 0.5 : 0;
+    this.base.setPosition(x, y).setAlpha(alpha);
+    this.knob.setPosition(x, y).setAlpha(alpha);
   }
 }
