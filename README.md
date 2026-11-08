@@ -45,6 +45,12 @@ src/
       HideSeekScene.ts  The field and the "who's hiding?" cards
       SeekMode.ts      You find the friends
       HideMode.ts      You hide, and a monster comes looking
+    chess/
+      rules.ts    The rules of chess: moves, check, checkmate, castling
+      ai.ts       The Sleepy (random) and Clever (looks ahead) computer players
+      pieces.ts   Builds each piece from Make a Monster parts. Your king is your monster
+      lessons.ts  Makes up puzzles with exactly one answer, by "generate and test"
+      ChessScene.ts    The board, taps and drags, hops and captures, undo, hints and lessons
 ```
 
 To add a game, make a folder in `src/games/` with a scene in it, then add it to
@@ -67,7 +73,7 @@ reads the controls, sets the hero's speed, and checks what the hero has reached.
 Physics does the moving and the bumping. On a computer, the arrow keys also work.
 
 The habit worth keeping is separating rules from drawing. `board.ts`, `world.ts`,
-`farm.ts` and `rules.ts` know nothing about Phaser, so they can be unit tested like
+`farm.ts` and the `rules.ts` files know nothing about Phaser, so they can be unit tested like
 any service.
 
 ## House rules for toddler games
