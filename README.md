@@ -49,7 +49,8 @@ src/
       rules.ts    The rules of chess: moves, check, checkmate, castling
       ai.ts       The Sleepy (random) and Clever (looks ahead) computer players
       pieces.ts   Builds each piece from Make a Monster parts. Your king is your monster
-      ChessScene.ts    The board, taps and drags, hops and captures, undo and hints
+      lessons.ts  Makes up puzzles with exactly one answer, by "generate and test"
+      ChessScene.ts    The board, taps and drags, hops and captures, undo, hints and lessons
 ```
 
 To add a game, make a folder in `src/games/` with a scene in it, then add it to

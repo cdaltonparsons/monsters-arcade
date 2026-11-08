@@ -6,6 +6,7 @@ import { addHomeButton, burstStars } from '../../shared/ui';
 import { pickMove, type Level } from './ai';
 import hintArt from './art/hint.svg?url';
 import undoArt from './art/undo.svg?url';
+import { isSolution, makeLesson, type Lesson, type Topic } from './lessons';
 import { makePieceTextures, makeTeams, PIECE_INFO, pieceKey, type Team } from './pieces';
 import {
   applyMove,
@@ -34,8 +35,15 @@ const COMPUTER_THINKS_MS = 750; // A pause, so it looks like the computer is thi
 const LIGHT_SQUARE = 0xfff8e7;
 const DARK_SQUARE = 0x9ed37f;
 
-/** Who you're playing against. */
-type Opponent = Level | 'friend';
+/** Who you're playing against, or 'lesson' for puzzles with no opponent at all. */
+type Opponent = Level | 'friend' | 'lesson';
+
+/** A big tappable card on a picker screen. */
+interface CardChoice {
+  title: string;
+  pictures: () => Phaser.GameObjects.Image[];
+  onPick: () => void;
+}
 
 /** A piece on screen: a shadow and a monster, moved together. */
 type PieceSprite = Phaser.GameObjects.Container;
@@ -71,6 +79,11 @@ export class ChessScene extends Phaser.Scene {
   private infoText!: Phaser.GameObjects.Text;
   private endPanel?: Phaser.GameObjects.Container;
   private hintStar?: Phaser.GameObjects.Image;
+  private undoButton!: Phaser.GameObjects.Image;
+  private lesson!: Lesson | null;
+  private topic!: Topic;
+  private lessonNumber!: number;
+  private goalStar?: Phaser.GameObjects.Image;
   private nameTag?: Phaser.GameObjects.Container;
   private hovered!: string;
 
@@ -100,6 +113,9 @@ export class ChessScene extends Phaser.Scene {
     this.hintStar = undefined;
     this.nameTag = undefined;
     this.hovered = '';
+    this.lesson = null;
+    this.lessonNumber = 0;
+    this.goalStar = undefined;
 
     // The pieces are drawn from code, so they're ready before anything shows.
     const hero = loadAvatar();
@@ -142,12 +158,12 @@ export class ChessScene extends Phaser.Scene {
     pill.fillRoundedRect(200, 40, 840, 120, 60);
     this.turnFace = this.add.image(270, 100, pieceKey({ side: 'w', kind: 'k' })).setDisplaySize(110, 110);
     this.turnText = this.add
-      .text(340, 100, '', { fontFamily: FONT, fontSize: '60px', color: INK })
+      .text(340, 100, '', { fontFamily: FONT, fontSize: '60px', color: INK, wordWrap: { width: 680 } })
       .setOrigin(0, 0.5);
 
     const bottom = GAME_HEIGHT - 130;
-    const undo = this.add.image(130, bottom, 'chess-undo').setDisplaySize(170, 170).setInteractive();
-    undo.setDepth(HUD_DEPTH + 1).on('pointerup', () => this.undo());
+    this.undoButton = this.add.image(130, bottom, 'chess-undo').setDisplaySize(170, 170).setInteractive();
+    this.undoButton.setDepth(HUD_DEPTH + 1).on('pointerup', () => this.undo());
     const hint = this.add.image(GAME_WIDTH - 130, bottom, 'chess-hint').setDisplaySize(170, 170).setInteractive();
     hint.on('pointerup', () => this.showHint());
     this.infoText = this.add
@@ -155,39 +171,68 @@ export class ChessScene extends Phaser.Scene {
       .setOrigin(0.5);
   }
 
-  /** Three big cards: two computer friends to play, or a grown-up or sibling. */
+  /** Four big cards: two computer friends to play, a grown-up or sibling, or lessons. */
   private addPicker(): void {
+    const choose = (opponent: Opponent): void => {
+      this.opponent = opponent;
+      this.busy = false;
+      this.updateTurn();
+    };
+    const face = (key: string) => () => [this.add.image(0, 0, key).setDisplaySize(250, 250)];
+    this.showCards([
+      { title: 'Sleepy monster', pictures: face('chess-sleepy'), onPick: () => choose('sleepy') },
+      { title: 'Clever monster', pictures: face('chess-clever'), onPick: () => choose('clever') },
+      {
+        title: 'Two players',
+        pictures: () => [
+          this.add.image(-80, 0, pieceKey({ side: 'w', kind: 'k' })).setDisplaySize(200, 200),
+          this.add.image(80, 0, pieceKey({ side: 'b', kind: 'k' })).setDisplaySize(200, 200),
+        ],
+        onPick: () => choose('friend'),
+      },
+      { title: 'Lessons', pictures: face('chess-hint'), onPick: () => this.addLessonPicker() },
+    ]);
+  }
+
+  /** What to practise. Each kind of lesson keeps going for as long as he likes. */
+  private addLessonPicker(): void {
+    const start = (topic: Topic): void => {
+      this.opponent = 'lesson';
+      this.topic = topic;
+      this.undoButton.setFlipX(true); // In lessons the undo arrow turns round, and skips to the next one.
+      this.startLesson();
+    };
+    const piece = (side: Side, kind: Piece['kind']) => () => [this.add.image(0, 0, pieceKey({ side, kind })).setDisplaySize(250, 250)];
+    this.showCards([
+      { title: 'How they move', pictures: piece('w', 'n'), onPick: () => start('move') },
+      { title: 'Catch!', pictures: piece('b', 'b'), onPick: () => start('catch') },
+      { title: 'Save the King', pictures: piece('w', 'k'), onPick: () => start('rescue') },
+      { title: 'Checkmate', pictures: piece('b', 'k'), onPick: () => start('mate') },
+    ]);
+  }
+
+  /** Dims the board and stacks up one card per choice. Picking one clears them all away. */
+  private showCards(choices: CardChoice[]): void {
     const dim = this.add
       .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.35)
       .setDepth(HUD_DEPTH - 1)
       .setInteractive(); // Swallows taps, so the board underneath can't be played yet.
 
-    const cards: Phaser.GameObjects.Container[] = [];
-    const choose = (opponent: Opponent): void => {
-      sfx.tap();
-      dim.destroy();
-      cards.forEach((card) => card.destroy());
-      this.opponent = opponent;
-      this.busy = false;
-      this.updateTurn();
-    };
-
-    const cardHeight = 440;
-    const top = GAME_HEIGHT / 2 - cardHeight - 40;
-    const friend = [
-      this.add.image(-90, 0, pieceKey({ side: 'w', kind: 'k' })).setDisplaySize(220, 220),
-      this.add.image(90, 0, pieceKey({ side: 'b', kind: 'k' })).setDisplaySize(220, 220),
-    ];
-    cards.push(
-      this.addCard(top, 'Sleepy monster', [this.add.image(0, 0, 'chess-sleepy').setDisplaySize(280, 280)], () => choose('sleepy')),
-      this.addCard(top + cardHeight + 40, 'Clever monster', [this.add.image(0, 0, 'chess-clever').setDisplaySize(280, 280)], () => choose('clever')),
-      this.addCard(top + (cardHeight + 40) * 2, 'Two players', friend, () => choose('friend')),
+    const height = 360;
+    const gap = 36;
+    const top = GAME_HEIGHT / 2 - ((choices.length - 1) * (height + gap)) / 2;
+    const cards = choices.map((choice, index) =>
+      this.addCard(top + index * (height + gap), height, choice.title, choice.pictures(), () => {
+        sfx.tap();
+        dim.destroy();
+        cards.forEach((card) => card.destroy());
+        choice.onPick();
+      }),
     );
   }
 
-  private addCard(y: number, title: string, pictures: Phaser.GameObjects.Image[], onPick: () => void): Phaser.GameObjects.Container {
+  private addCard(y: number, height: number, title: string, pictures: Phaser.GameObjects.Image[], onPick: () => void): Phaser.GameObjects.Container {
     const width = 900;
-    const height = 440;
     const background = this.add.graphics();
     background.fillStyle(0xffffff);
     background.fillRoundedRect(-width / 2, -height / 2, width, height, 60);
@@ -204,7 +249,7 @@ export class ChessScene extends Phaser.Scene {
   }
 
   private isHumanTurn(): boolean {
-    return this.opponent === 'friend' || this.position.turn === 'w';
+    return this.opponent === 'friend' || this.opponent === 'lesson' || this.position.turn === 'w';
   }
 
   private updateTurn(): void {
@@ -424,6 +469,10 @@ export class ChessScene extends Phaser.Scene {
     this.busy = true;
     this.select(null);
     this.clearHint();
+    if (this.lesson && !isSolution(this.lesson, move)) {
+      await this.tryAgain(move);
+      return;
+    }
     this.history.push(this.position);
     this.moves.push(move);
 
@@ -431,6 +480,10 @@ export class ChessScene extends Phaser.Scene {
     this.position = applyMove(this.position, move);
     this.drawHighlights();
     this.drawMarks();
+    if (this.lesson) {
+      this.lessonSolved();
+      return;
+    }
 
     const status = gameStatus(this.position);
     if (status === 'checkmate') {
@@ -449,12 +502,20 @@ export class ChessScene extends Phaser.Scene {
       return;
     }
     this.time.delayedCall(COMPUTER_THINKS_MS, () => {
-      if (this.opponent && this.opponent !== 'friend') void this.playMove(pickMove(this.position, this.opponent));
+      if (this.opponent === 'sleepy' || this.opponent === 'clever') void this.playMove(pickMove(this.position, this.opponent));
     });
   }
 
   /** Take back the last move. Against the computer, its reply goes too, so it's your turn again. */
   private undo(): void {
+    if (this.lesson) {
+      // In lessons this button skips to a new puzzle instead.
+      if (this.busy) return;
+      sfx.tap();
+      this.lessonNumber++;
+      this.startLesson();
+      return;
+    }
     if (this.busy || this.history.length === 0) return;
     sfx.boing();
     do {
@@ -477,7 +538,7 @@ export class ChessScene extends Phaser.Scene {
   private showHint(): void {
     if (this.busy || this.over || !this.opponent || !this.isHumanTurn()) return;
     this.clearHint();
-    const move = pickMove(this.position, 'clever');
+    const move = this.lesson ? this.lesson.solution : pickMove(this.position, 'clever');
     this.select(move.from);
     this.showInfo(move.piece, move.from);
     sfx.star();
@@ -571,6 +632,86 @@ export class ChessScene extends Phaser.Scene {
       .setDepth(HUD_DEPTH);
     this.endPanel.setScale(0);
     this.tweens.add({ targets: this.endPanel, scale: 1, duration: 350, ease: 'Back.easeOut' });
+  }
+
+  // ---------------------------------------------------------------- Lessons
+
+  /** Makes a fresh puzzle (see lessons.ts) and sets the board up for it. */
+  private startLesson(): void {
+    const lesson = makeLesson(this.topic, this.lessonNumber);
+    this.lesson = lesson;
+    this.position = lesson.position;
+    this.history = [];
+    this.moves = [];
+    this.select(null);
+    this.clearHint();
+    this.goalStar?.destroy();
+    this.goalStar = undefined;
+    this.placeAllPieces();
+    this.drawHighlights();
+    this.drawMarks();
+
+    // The pieces pop up onto the board.
+    const sprites = this.sprites.flat().filter((sprite): sprite is PieceSprite => sprite !== null);
+    sprites.forEach((sprite) => sprite.setScale(0));
+    this.tweens.add({ targets: sprites, scale: 1, duration: 300, ease: 'Back.easeOut', delay: this.tweens.stagger(40, {}) });
+
+    if (lesson.star) {
+      this.goalStar = this.add.image(this.cellX(lesson.star.col), this.cellY(lesson.star.row), 'icon-star').setDepth(3);
+      this.tweens.add({ targets: this.goalStar, scale: { from: 0.9, to: 1.25 }, duration: 500, yoyo: true, repeat: -1 });
+    }
+
+    // The instructions, with the piece the lesson is about.
+    const name = (kind: Piece['kind'] | null): string => (kind ? PIECE_INFO[kind].name : '');
+    const words: Record<Topic, string> = {
+      move: `Move the ${name(lesson.piece)} to the star!`,
+      catch: `Catch the ${name(lesson.target)}!`,
+      rescue: `Catch the ${name(lesson.target)} attacking your King!`,
+      mate: 'Find checkmate! Trap their King.',
+    };
+    const faceKind = lesson.topic === 'mate' ? 'k' : (lesson.target ?? lesson.piece);
+    const faceSide: Side = lesson.topic === 'move' ? 'w' : 'b';
+    this.turnFace.setTexture(pieceKey({ side: faceSide, kind: faceKind })).setDisplaySize(110, 110);
+    this.tweens.killTweensOf(this.turnFace);
+    this.turnFace.setAngle(0);
+    this.turnText.setFontSize(words[lesson.topic].length > 24 ? 44 : 56).setText(words[lesson.topic]);
+    this.infoText.setText('');
+
+    if (lesson.topic === 'rescue') this.time.delayedCall(500, () => this.warnKing());
+    this.busy = false;
+  }
+
+  /** Not the answer: the monster hops over to look, then hops back home. No telling off. */
+  private async tryAgain(move: Move): Promise<void> {
+    const sprite = this.sprites[move.from.row][move.from.col]!;
+    const home = { x: this.cellX(move.from.col), y: this.cellY(move.from.row) };
+    sprite.setScale(1).setDepth(50);
+    sfx.hop();
+    await this.hop(sprite, this.cellX(move.to.col), this.cellY(move.to.row), 60, 300);
+    sfx.boing();
+    this.bubble(sprite.x, sprite.y - 90, 'Try again!');
+    await this.hop(sprite, home.x, home.y, 40, 300);
+    sprite.setDepth(10 + home.y / 1000);
+    this.busy = false;
+  }
+
+  /** The right answer! Stars, cheering, and the next puzzle. */
+  private lessonSolved(): void {
+    this.goalStar?.destroy();
+    this.goalStar = undefined;
+    const to = this.lesson!.solution.to;
+    const x = this.cellX(to.col);
+    const y = this.cellY(to.row);
+    sfx.party();
+    for (let i = 0; i < 5; i++) {
+      this.time.delayedCall(i * 140, () => burstStars(this, x + Phaser.Math.Between(-150, 150), y + Phaser.Math.Between(-150, 150), 10));
+    }
+    this.bubble(x, y - 90, this.lesson!.topic === 'mate' ? 'Checkmate!' : 'Great!');
+    const sprite = this.sprites[to.row][to.col];
+    if (sprite) this.tweens.add({ targets: sprite, y: y - 50, duration: 220, yoyo: true, repeat: 3, ease: 'Sine.easeOut' });
+
+    this.lessonNumber++;
+    this.time.delayedCall(2300, () => this.startLesson());
   }
 
   // ---------------------------------------------------------------- Drawing
